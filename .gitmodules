@@ -1,0 +1,9 @@
+[submodule "components/iotp-wifi"]
+	path = components/iotp-wifi
+	url = git@github.com:matt-g-everett/iotp-wifi.git
+[submodule "components/iotp-ota"]
+	path = components/iotp-ota
+	url = git@github.com:matt-g-everett/iotp-ota.git
+[submodule "components/iotp-crc32"]
+	path = components/iotp-crc32
+	url = git@github.com:matt-g-everett/iotp-crc32.git

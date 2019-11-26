@@ -6,7 +6,6 @@
 #include "mqtt_client.h"
 #include "iotp_ota.h"
 #include "iotp_wifi.h"
-#include "iotp_ds18b20.h"
 
 #define STACK_SIZE 4096
 
