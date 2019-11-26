@@ -1,0 +1,46 @@
+menu "ledrx Configuration"
+
+config WIFI_SSID
+    string "WiFi SSID"
+    default "myssid"
+    help
+        SSID (network name) for the example to connect to.
+
+config WIFI_PASSWORD
+    string "WiFi Password"
+    default "mypassword"
+    help
+        WiFi password (WPA or WPA2) for the example to use.
+
+config BROKER_URL
+    string "Broker URL"
+    default "mqtt://iot.eclipse.org"
+    help
+        URL of the broker to connect to
+
+config MQTT_USERNAME
+    string "MQTT Username"
+    default "admin"
+    help
+        MQTT username for the example to use.
+
+config MQTT_PASSWORD
+    string "MQTT Password"
+    default "admin"
+    help
+        MQTT password for the example to use.
+
+config OTA_TOPIC_ADVERTISE
+    string "MQTT OTA Advertise Topic"
+    default "home/ota/advertise"
+    help
+        MQTT topic on which OTA software versions will be advertised.
+
+config LED_GPIO
+    int "LED GPIO number"
+	range 0 34
+	default 17
+	help
+		GPIO number (IOxx) to access WS2811 LED control wire.
+
+endmenu
