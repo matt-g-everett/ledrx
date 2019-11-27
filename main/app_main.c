@@ -6,6 +6,7 @@
 #include "mqtt_client.h"
 #include "iotp_ota.h"
 #include "iotp_wifi.h"
+#include "led.h"
 
 #define STACK_SIZE 4096
 
@@ -19,6 +20,11 @@ extern const uint8_t version_end[] asm("_binary_version_txt_end");
 static mqtt_ota_state_handle_t _mqtt_ota_state;
 static uint8_t _tasks_started = false;
 
+static void subscribe_led_stream(esp_mqtt_client_handle_t client, const char *advertise_topic) {
+    int msg_id = esp_mqtt_client_subscribe(client, advertise_topic, 0);
+    ESP_LOGI(TAG, "Sent subscribe to %s, msg_id=%d", advertise_topic, msg_id);
+}
+
 static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
 {
     switch (event->event_id) {
@@ -26,8 +32,12 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
             ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
             ESP_LOGI(TAG, "***** ledrx started, version: %s *****", (const char *)version_start);
 
+            // Hook-up OTA
             mqtt_ota_set_connected(_mqtt_ota_state, true);
             mqtt_ota_subscribe(event->client, CONFIG_OTA_TOPIC_ADVERTISE);
+
+            // Hook-up LED stream
+            subscribe_led_stream(event->client, CONFIG_LED_TOPIC_STREAM);
             break;
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
@@ -70,9 +80,13 @@ static esp_mqtt_client_handle_t mqtt_app_start(void)
     return client;
 }
 
+static void handle_ota_state_change(uint8_t started) {
+    led_set_running(!started);
+}
+
 void start_tasks(void) {
     esp_mqtt_client_handle_t client = mqtt_app_start();
-    _mqtt_ota_state = mqtt_ota_init(client, SOFTWARE, (const char *)version_start);
+    _mqtt_ota_state = mqtt_ota_init(client, SOFTWARE, (const char *)version_start, handle_ota_state_change);
     xTaskCreate(mqtt_ota_task, "ota", STACK_SIZE, _mqtt_ota_state, 5, NULL);
 }
 
@@ -124,4 +138,5 @@ void app_main()
 
     wifi_init(CONFIG_WIFI_SSID, CONFIG_WIFI_PASSWORD);
     initialize_sntp();
+    led_initialise(CONFIG_LED_GPIO);
 }

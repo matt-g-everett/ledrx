@@ -41,6 +41,26 @@ config LED_GPIO
 	range 0 34
 	default 17
 	help
-		GPIO number (IOxx) to access WS2811 LED control wire.
+		GPIO number (IOxx) attached to the LED control wire.
+
+config LED_NUM_PIXELS
+    int "Number of pixels"
+	range 0 655365
+	default 50
+	help
+		Number of RGB LED pixels.
+
+config LED_FRAME_BUFFER_SIZE
+    int "Frame buffer size"
+	range 0 50
+	default 8
+	help
+		Number of frames in the frame buffer.
+
+config LED_TOPIC_STREAM
+    string "MQTT LED data topic"
+    default "home/ledrx/stream"
+    help
+        MQTT topic on which streaming LED data is sent.
 
 endmenu
