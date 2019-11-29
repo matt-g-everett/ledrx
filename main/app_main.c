@@ -53,7 +53,12 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
             ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
             break;
         case MQTT_EVENT_DATA:
-            mqtt_ota_handle_data(_mqtt_ota_state, event, CONFIG_OTA_TOPIC_ADVERTISE);
+            if (event->topic_len > 0 && strncmp(event->topic, CONFIG_LED_TOPIC_STREAM, event->topic_len) == 0) {
+                led_push_stream(event->data);
+            }
+            else {
+                mqtt_ota_handle_data(_mqtt_ota_state, event, CONFIG_OTA_TOPIC_ADVERTISE);
+            }
             break;
         case MQTT_EVENT_ERROR:
             ESP_LOGI(TAG, "MQTT_EVENT_ERROR");
@@ -88,6 +93,8 @@ void start_tasks(void) {
     esp_mqtt_client_handle_t client = mqtt_app_start();
     _mqtt_ota_state = mqtt_ota_init(client, SOFTWARE, (const char *)version_start, handle_ota_state_change);
     xTaskCreate(mqtt_ota_task, "ota", STACK_SIZE, _mqtt_ota_state, 5, NULL);
+
+    xTaskCreate(led_task, "led", STACK_SIZE, NULL, 5, NULL);
 }
 
 void time_sync_notification_cb(struct timeval *tv)
@@ -102,7 +109,9 @@ static void initialize_sntp(void)
 {
     ESP_LOGI(TAG, "Initializing SNTP");
     sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    sntp_setservername(0, "pool.ntp.org");
+    //sntp_setservername(0, "pool.ntp.org");
+    sntp_setservername(0, "0.uk.pool.ntp.org");
+    sntp_setservername(1, "1.uk.pool.ntp.org");
     sntp_set_time_sync_notification_cb(time_sync_notification_cb);
     sntp_init();
 

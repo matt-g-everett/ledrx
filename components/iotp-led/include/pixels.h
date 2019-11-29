@@ -7,7 +7,7 @@
 extern "C" {
 #endif
 
-typedef struct {
+typedef struct __attribute__((__packed__)) {
     union {
         struct {
             uint8_t r;
@@ -18,7 +18,7 @@ typedef struct {
     };
 } RGB_t;
 
-typedef struct frame_t {
+typedef struct __attribute__((__packed__)) frame_t {
     uint16_t len;
     RGB_t data[CONFIG_LED_NUM_PIXELS];
 } FRAME_t;

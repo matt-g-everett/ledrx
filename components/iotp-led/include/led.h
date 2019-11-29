@@ -10,8 +10,9 @@ extern "C" {
 #endif
 
 void led_initialise(int gpio_num);
-void led_task(void *pParam);
 void led_set_running(uint8_t running);
+uint8_t led_push_stream(char *data);
+void led_task(void *pParam);
 
 #ifdef __cplusplus
 }

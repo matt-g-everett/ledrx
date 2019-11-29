@@ -9,12 +9,29 @@
 
 const static char *TAG = "LED";
 
-FRAME_t frame_buffer[CONFIG_LED_FRAME_BUFFER_SIZE];
+FRAME_t _frame_buffer[CONFIG_LED_FRAME_BUFFER_SIZE];
 
 uint8_t _running = 0;
+uint8_t _head = 0;
+uint8_t _tail = 0;
+
+// reads a byte from the buffer and return ERROR_EMPTY if buffer empty
+static FRAME_t * fifo_read() {
+   if (_head == _tail) return NULL;
+   _tail = (_tail + 1) % CONFIG_LED_FRAME_BUFFER_SIZE;
+   return _frame_buffer + _tail;
+}
+
+// writes a byte to the buffer if not ERROR_FULL
+static uint8_t fifo_write(FRAME_t *frame) {
+   if (_head + 1 == _tail) return false;
+   _head = (_head + 1) % CONFIG_LED_FRAME_BUFFER_SIZE;
+   _frame_buffer[_head] = *frame;
+   return true;
+}
 
 void led_initialise(int gpio_num) {
-    _running = 1;
+    _running = true;
     ws2811_init(gpio_num);
 }
 
@@ -23,11 +40,24 @@ void led_set_running(uint8_t running) {
     _running = running;
 }
 
+uint8_t led_push_stream(char *data) {
+    FRAME_t *frame = (FRAME_t*)data;
+    return fifo_write(frame);
+}
+
 void led_task(void *pParam) {
+    FRAME_t *frame;
     while(true) {
         if (_running) {
-            ws2811_setColors(CONFIG_LED_NUM_PIXELS, frame_buffer[0].data);
-            vTaskDelay(2 / portTICK_PERIOD_MS);
+            frame = fifo_read();
+            if (frame != NULL) {
+                ESP_LOGI(TAG, "Nothing in buffer.");
+            }
+            else {
+                ESP_LOGI(TAG, "Displaying frame.");
+            }
+            //ws2811_setColors(CONFIG_LED_NUM_PIXELS, frame->data);
+            vTaskDelay(1000 / portTICK_PERIOD_MS);
         }
         else {
             vTaskDelay(1000 / portTICK_PERIOD_MS);
