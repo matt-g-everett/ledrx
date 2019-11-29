@@ -109,7 +109,6 @@ static void initialize_sntp(void)
 {
     ESP_LOGI(TAG, "Initializing SNTP");
     sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    //sntp_setservername(0, "pool.ntp.org");
     sntp_setservername(0, "0.uk.pool.ntp.org");
     sntp_setservername(1, "1.uk.pool.ntp.org");
     sntp_set_time_sync_notification_cb(time_sync_notification_cb);

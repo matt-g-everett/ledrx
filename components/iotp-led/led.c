@@ -42,7 +42,11 @@ void led_set_running(uint8_t running) {
 
 uint8_t led_push_stream(char *data) {
     FRAME_t *frame = (FRAME_t*)data;
-    return fifo_write(frame);
+    //return fifo_write(frame);
+    ESP_LOGI(TAG, "led data: %d", frame->len);
+    ESP_LOGI(TAG, "led data: #%02x%02x%02x, #%02x%02x%02x", frame->data[0].r, frame->data[0].g, frame->data[0].b,
+        frame->data[1].r, frame->data[1].g, frame->data[1].b);
+    return 0;
 }
 
 void led_task(void *pParam) {
