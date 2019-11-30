@@ -19,4 +19,4 @@ ota: increment all
 	ota/publishbin.sh $(PROJECT_NAME) $(PROJECT_PATH)
 
 # Run the monitor recipe after the ota recipe
-monitor: | ota
+# monitor: | ota
