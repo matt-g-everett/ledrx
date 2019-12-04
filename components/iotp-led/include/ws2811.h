@@ -16,7 +16,7 @@
 extern "C" {
 #endif
 
-extern void ws2811_init(int gpioNum);
+extern void ws2811_init(int *gpioNum, size_t count);
 extern void ws2811_setColors(unsigned int length, RGB_t *array);
 
 #ifdef __cplusplus

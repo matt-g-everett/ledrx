@@ -56,8 +56,11 @@ static uint8_t fifo_write(FRAME_t *frame) {
 }
 
 void led_initialise(int gpio_num) {
+    int gpios[1];
+    gpios[0] = gpio_num;
+
     _running = true;
-    ws2811_init(gpio_num);
+    ws2811_init(gpios, 1);
 }
 
 void led_set_running(uint8_t running) {

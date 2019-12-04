@@ -21,6 +21,8 @@
 #include <stdlib.h>
 #include <driver/rmt.h>
 
+#include "esp_log.h"
+
 #include "ws2811.h"
 
 #define ETS_RMT_CTRL_INUM 18
@@ -36,27 +38,32 @@
 #define ZERO_LOW_TICKS 40
 #define RESET_TICKS 1000
 
-#define MAX_PULSES 128
-#define BLOCK_PULSES (MAX_PULSES * 2)
+#define TOTAL_BLOCKS 4
+#define PULSES_PER_BLOCK 64
 
-#define RMTCHANNEL 0
+#define MAX_CHANNELS 4
 
-static uint8_t *ws2811_buffer = NULL;
-static uint16_t ws2811_pos, ws2811_len, ws2811_half, ws2812_bufIsDirty;
-static xSemaphoreHandle ws2811_sem = NULL;
-static intr_handle_t rmt_intr_handle = NULL;
+const static char *TAG = "WS2811";
+
+static uint8_t *ws2811_buffer[MAX_CHANNELS];
+static uint16_t ws2811_pos[MAX_CHANNELS], ws2811_len,
+    ws2811_half[MAX_CHANNELS], ws2811_bufIsDirty[MAX_CHANNELS];
+static xSemaphoreHandle ws2811_sem[MAX_CHANNELS];
+static intr_handle_t rmt_intr_handle;
+static uint32_t _blocks_per_channel;
+static uint32_t _channel_pulses;
+static uint32_t _write_pulses;
+static uint8_t _channel_count;
 
 static rmt_item32_t high = {
     .duration0 = ONE_HIGH_TICKS, .level0 = 1, .duration1 = ONE_LOW_TICKS, .level1 = 0};
 static rmt_item32_t low = {
     .duration0 = ZERO_HIGH_TICKS, .level0 = 1, .duration1 = ZERO_LOW_TICKS, .level1 = 0};
 
-void ws2811_initRMTChannel(int rmtChannel)
+void ws2811_initRMTChannel(uint8_t rmtChannel)
 {
-    RMT.apb_conf.fifo_mask = 1; //enable memory access, instead of FIFO mode.
-    RMT.apb_conf.mem_tx_wrap_en = 1; //wrap around when hitting end of buffer
     RMT.conf_ch[rmtChannel].conf0.div_cnt = DIVIDER;
-    RMT.conf_ch[rmtChannel].conf0.mem_size = 4;
+    RMT.conf_ch[rmtChannel].conf0.mem_size = _blocks_per_channel;
     RMT.conf_ch[rmtChannel].conf0.carrier_en = 0;
     RMT.conf_ch[rmtChannel].conf0.carrier_out_lv = 1;
     RMT.conf_ch[rmtChannel].conf0.mem_pd = 0;
@@ -71,50 +78,51 @@ void ws2811_initRMTChannel(int rmtChannel)
     return;
 }
 
-void ws2811_copy()
+void ws2811_copy(uint8_t rmtChannel)
 {
-    unsigned int i, j, offset, len, bit;
+    uint16_t i, offset, len;
+    uint8_t j, bit;
 
-    offset = ws2811_half * MAX_PULSES;
-    ws2811_half = !ws2811_half;
+    offset = ws2811_half[rmtChannel] * _write_pulses;
+    ws2811_half[rmtChannel] = !ws2811_half[rmtChannel];
 
-    len = ws2811_len - ws2811_pos;
-    if (len > (MAX_PULSES / 8))
-        len = (MAX_PULSES / 8);
+    len = ws2811_len - ws2811_pos[rmtChannel];
+    if (len > (_write_pulses / 8))
+        len = (_write_pulses / 8);
 
     if (!len)
     {
-        if (!ws2812_bufIsDirty)
+        if (!ws2811_bufIsDirty[rmtChannel])
         {
             return;
         }
 
-        for (i = 0; i < MAX_PULSES; i++)
-            RMTMEM.chan[RMTCHANNEL].data32[i + offset].val = 0;
+        for (i = 0; i < _write_pulses; i++)
+            RMTMEM.chan[rmtChannel].data32[i + offset].val = 0;
 
-        ws2812_bufIsDirty = 0;
+        ws2811_bufIsDirty[rmtChannel] = 0;
         return;
     }
-    ws2812_bufIsDirty = 1;
+    ws2811_bufIsDirty[rmtChannel] = 1;
 
     for (i = 0; i < len; i++)
     {
-        bit = ws2811_buffer[i + ws2811_pos];
+        bit = ws2811_buffer[rmtChannel][i + ws2811_pos[rmtChannel]];
         for (j = 0; j < 8; j++, bit <<= 1)
         {
-            RMTMEM.chan[RMTCHANNEL].data32[j + i * 8 + offset].val = ((bit >> 7) & 0x01) ? high.val : low.val;
+            RMTMEM.chan[rmtChannel].data32[j + i * 8 + offset].val = ((bit >> 7) & 0x01) ? high.val : low.val;
         }
 
-        if (i + ws2811_pos == ws2811_len - 1)
+        if (i + ws2811_pos[rmtChannel] == ws2811_len - 1)
         {
-            RMTMEM.chan[RMTCHANNEL].data32[7 + i * 8 + offset].duration1 = RESET_TICKS;
+            RMTMEM.chan[rmtChannel].data32[7 + i * 8 + offset].duration1 = RESET_TICKS;
         }
     }
 
-    for (i *= 8; i < MAX_PULSES; i++)
-        RMTMEM.chan[RMTCHANNEL].data32[i + offset].val = 0;
+    for (i *= 8; i < _write_pulses; i++)
+        RMTMEM.chan[rmtChannel].data32[i + offset].val = 0;
 
-    ws2811_pos += len;
+    ws2811_pos[rmtChannel] += len;
     return;
 }
 
@@ -124,30 +132,82 @@ void ws2811_handleInterrupt(void *arg)
 
     if (RMT.int_st.ch0_tx_thr_event)
     {
-        ws2811_copy();
+        ws2811_copy(0);
         RMT.int_clr.ch0_tx_thr_event = 1;
     }
-    else if (RMT.int_st.ch0_tx_end && ws2811_sem)
+    else if (RMT.int_st.ch0_tx_end && ws2811_sem[0])
     {
-        xSemaphoreGiveFromISR(ws2811_sem, &taskAwoken);
+        xSemaphoreGiveFromISR(ws2811_sem[0], &taskAwoken);
         RMT.int_clr.ch0_tx_end = 1;
+    }
+    else if (RMT.int_st.ch1_tx_thr_event)
+    {
+        ws2811_copy(1);
+        RMT.int_clr.ch1_tx_thr_event = 1;
+    }
+    else if (RMT.int_st.ch1_tx_end && ws2811_sem[1])
+    {
+        xSemaphoreGiveFromISR(ws2811_sem[1], &taskAwoken);
+        RMT.int_clr.ch1_tx_end = 1;
+    }
+    else if (RMT.int_st.ch2_tx_thr_event)
+    {
+        ws2811_copy(2);
+        RMT.int_clr.ch2_tx_thr_event = 1;
+    }
+    else if (RMT.int_st.ch2_tx_end && ws2811_sem[2])
+    {
+        xSemaphoreGiveFromISR(ws2811_sem[2], &taskAwoken);
+        RMT.int_clr.ch2_tx_end = 1;
+    }
+    else if (RMT.int_st.ch3_tx_thr_event)
+    {
+        ws2811_copy(3);
+        RMT.int_clr.ch3_tx_thr_event = 1;
+    }
+    else if (RMT.int_st.ch3_tx_end && ws2811_sem[3])
+    {
+        xSemaphoreGiveFromISR(ws2811_sem[3], &taskAwoken);
+        RMT.int_clr.ch3_tx_end = 1;
     }
 
     return;
 }
 
-void ws2811_init(int gpioNum)
+void ws2811_init(int *gpioNum, size_t count)
 {
+    uint8_t chan;
+
+    _blocks_per_channel = TOTAL_BLOCKS / count;
+    _channel_pulses = _blocks_per_channel * PULSES_PER_BLOCK;
+    _write_pulses = _channel_pulses / 2; // We write half of the buffer at a time
+    _channel_count = count;
+
     DPORT_SET_PERI_REG_MASK(DPORT_PERIP_CLK_EN_REG, DPORT_RMT_CLK_EN);
     DPORT_CLEAR_PERI_REG_MASK(DPORT_PERIP_RST_EN_REG, DPORT_RMT_RST);
+    RMT.apb_conf.fifo_mask = 1; //enable memory access, instead of FIFO mode.
+    RMT.apb_conf.mem_tx_wrap_en = 1; //wrap around when hitting end of buffer
 
-    rmt_set_pin((rmt_channel_t)RMTCHANNEL, RMT_MODE_TX, (gpio_num_t)gpioNum);
+    for (chan = 0; chan < _channel_count; chan++) {
+        rmt_set_pin((rmt_channel_t)chan, RMT_MODE_TX, (gpio_num_t)gpioNum[chan]);
+        ws2811_initRMTChannel(chan);
+        RMT.tx_lim_ch[chan].limit = _write_pulses;
+    }
 
-    ws2811_initRMTChannel(RMTCHANNEL);
-
-    RMT.tx_lim_ch[RMTCHANNEL].limit = MAX_PULSES;
-    RMT.int_ena.ch0_tx_thr_event = 1;
-    RMT.int_ena.ch0_tx_end = 1;
+    if (_channel_count > 0) {
+        RMT.int_ena.ch0_tx_thr_event = 1;
+        RMT.int_ena.ch0_tx_end = 1;
+    }
+    else if (_channel_count > 1) {
+        RMT.int_ena.ch1_tx_thr_event = 1;
+        RMT.int_ena.ch1_tx_end = 1;
+    }
+    else if (_channel_count > 3) {
+        RMT.int_ena.ch2_tx_thr_event = 1;
+        RMT.int_ena.ch2_tx_end = 1;
+        RMT.int_ena.ch3_tx_thr_event = 1;
+        RMT.int_ena.ch3_tx_end = 1;
+    }
 
     esp_intr_alloc(ETS_RMT_INTR_SOURCE, 0, ws2811_handleInterrupt, NULL, &rmt_intr_handle);
 
@@ -156,37 +216,49 @@ void ws2811_init(int gpioNum)
 
 void ws2811_setColors(unsigned int length, RGB_t *array)
 {
-    unsigned int i;
+    uint8_t chan;
+    uint16_t i, j, buffer_end;
 
-    ws2811_len = (length * 3) * sizeof(uint8_t);
-    ws2811_buffer = malloc(ws2811_len);
+    uint16_t full_len = (length * 3) * sizeof(uint8_t);
+    ws2811_len = full_len / _channel_count;
+    uint16_t array_len_per_channel = length / _channel_count;
 
-    for (i = 0; i < length; i++)
-    {
-        ws2811_buffer[0 + i * 3] = array[i].r;
-        ws2811_buffer[1 + i * 3] = array[i].g;
-        ws2811_buffer[2 + i * 3] = array[i].b;
+    j = 0;
+    for (chan = 0; chan < _channel_count; chan++) {
+        ws2811_buffer[chan] = malloc(ws2811_len);
+        buffer_end = (chan + 1) * array_len_per_channel;
+        for (i = 0; j < buffer_end; j++, i++)
+        {
+            ws2811_buffer[chan][0 + i * 3] = array[j].r;
+            ws2811_buffer[chan][1 + i * 3] = array[j].g;
+            ws2811_buffer[chan][2 + i * 3] = array[j].b;
+        }
+
+        ws2811_pos[chan] = 0;
+        ws2811_half[chan] = 0;
     }
 
-    ws2811_pos = 0;
-    ws2811_half = 0;
+    for (chan = 0; chan < _channel_count; chan++) {
 
-    ws2811_copy();
+        ws2811_copy(chan);
 
-    if (ws2811_pos < ws2811_len)
-        ws2811_copy();
+        if (ws2811_pos[chan] < ws2811_len)
+            ws2811_copy(chan);
 
-    ws2811_sem = xSemaphoreCreateBinary();
+        ws2811_sem[chan] = xSemaphoreCreateBinary();
 
-    //ets_printf("st\n");
-    RMT.conf_ch[RMTCHANNEL].conf1.mem_rd_rst = 1;
-    RMT.conf_ch[RMTCHANNEL].conf1.tx_start = 1;
+        RMT.conf_ch[chan].conf1.mem_rd_rst = 1;
+        RMT.conf_ch[chan].conf1.tx_start = 1;
+    }
 
-    xSemaphoreTake(ws2811_sem, portMAX_DELAY);
-    vSemaphoreDelete(ws2811_sem);
-    ws2811_sem = NULL;
+    for (chan = 0; chan < _channel_count; chan++) {
 
-    free(ws2811_buffer);
+        xSemaphoreTake(ws2811_sem[chan], portMAX_DELAY);
+        vSemaphoreDelete(ws2811_sem[chan]);
+        ws2811_sem[chan] = NULL;
+
+        free(ws2811_buffer[chan]);
+    }
 
     return;
 }
