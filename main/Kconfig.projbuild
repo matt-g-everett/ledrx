@@ -36,12 +36,19 @@ config OTA_TOPIC_ADVERTISE
     help
         MQTT topic on which OTA software versions will be advertised.
 
-config LED_GPIO
-    int "LED GPIO number"
-	range 0 34
-	default 17
+config LED_GPIO_A
+    int "LED channel A GPIO number"
+	range 0 39
+	default 26
 	help
-		GPIO number (IOxx) attached to the LED control wire.
+		GPIO number (IOxx) attached to the first LED control wire.
+
+config LED_GPIO_B
+    int "LED channel B GPIO number"
+	range 0 39
+	default 27
+	help
+		GPIO number (IOxx) attached to the second LED control wire.
 
 config LED_NUM_PIXELS
     int "Number of pixels"

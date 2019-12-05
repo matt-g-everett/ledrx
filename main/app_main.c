@@ -146,5 +146,9 @@ void app_main()
 
     wifi_init(CONFIG_WIFI_SSID, CONFIG_WIFI_PASSWORD);
     initialize_sntp();
-    led_initialise(CONFIG_LED_GPIO);
+
+    int gpios[2];
+    gpios[0] = CONFIG_LED_GPIO_A;
+    gpios[1] = CONFIG_LED_GPIO_B;
+    led_initialise(gpios, sizeof(gpios) / sizeof(int));
 }
