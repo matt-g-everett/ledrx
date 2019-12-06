@@ -1,4 +1,9 @@
-/* Created 19 Nov 2016 by Chris Osborn <fozztexx@fozztexx.com>
+/* This derived work is by Matt Everett <matt.g.everett@gmail.com>
+ *
+ * Original header, credit, license and general cleverness supplied
+ * by Chris Osborn (see below): -
+ *
+ * Created 19 Nov 2016 by Chris Osborn <fozztexx@fozztexx.com>
  * http://insentricity.com
  *
  * Uses the RMT peripheral on the ESP32 for very accurate timing of
