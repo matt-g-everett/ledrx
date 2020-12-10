@@ -19,6 +19,7 @@ typedef struct __attribute__((__packed__)) {
 } RGB_t;
 
 typedef struct __attribute__((__packed__)) frame_t {
+    uint8_t ackID;
     uint16_t len;
     RGB_t data[CONFIG_LED_NUM_PIXELS];
 } FRAME_t;

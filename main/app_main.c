@@ -12,6 +12,7 @@
 
 static const char *TAG = "LEDRX";
 static const char *SOFTWARE = "ledrx";
+static const char *ACK_MSG_JSON = "{\"type\":\"ack\",\"ackID\":%u}";
 
 // Embedded files
 extern const uint8_t version_start[] asm("_binary_version_txt_start");
@@ -19,6 +20,7 @@ extern const uint8_t version_end[] asm("_binary_version_txt_end");
 
 static mqtt_ota_state_handle_t _mqtt_ota_state;
 static uint8_t _tasks_started = false;
+static uint8_t _ackID = 0;
 
 static void subscribe_led_stream(esp_mqtt_client_handle_t client, const char *advertise_topic) {
     int msg_id = esp_mqtt_client_subscribe(client, advertise_topic, 0);
@@ -119,6 +121,18 @@ static void initialize_sntp(void)
     tzset();
 }
 
+static void led_ack_callback(uint8_t ackID)
+{
+    char message[100];
+
+    // Handle the ack identifier, if it's not zero and it's changed, send a confirmation
+    if (ackID != _ackID && ackID != 0) {
+        sprintf(message, ACK_MSG_JSON, ackID);
+        esp_mqtt_client_publish(_mqtt_ota_state->client, "home/xmastree/cal/client", message, 0, 0, 0);
+    }
+    _ackID = ackID;
+}
+
 void app_main()
 {
     esp_err_t err;
@@ -150,5 +164,5 @@ void app_main()
     int gpios[2];
     gpios[0] = CONFIG_LED_GPIO_A;
     gpios[1] = CONFIG_LED_GPIO_B;
-    led_initialise(gpios, sizeof(gpios) / sizeof(int));
+    led_initialise(led_ack_callback, gpios, sizeof(gpios) / sizeof(int));
 }

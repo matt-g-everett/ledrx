@@ -2,6 +2,7 @@
 #include "freertos/task.h"
 
 #include "esp_log.h"
+#include "mqtt_client.h"
 
 #include "ws2811.h"
 #include "led.h"
@@ -11,6 +12,7 @@ const static char *TAG = "LED";
 
 FRAME_t _frame_buffer[CONFIG_LED_FRAME_BUFFER_SIZE];
 
+led_ack _ack_callback = NULL;
 uint8_t _running = 0;
 uint8_t _head = 0;
 uint8_t _tail = 0;
@@ -49,8 +51,9 @@ static uint8_t fifo_write(FRAME_t *frame) {
     return true;
 }
 
-void led_initialise(int *gpios, size_t count) {
+void led_initialise(led_ack ack_callback, int *gpios, size_t count) {
     _running = true;
+    _ack_callback = ack_callback;
     ws2811_init(gpios, count);
 }
 
@@ -65,11 +68,14 @@ uint8_t led_push_stream(char *data) {
 
 void led_task(void *pParam) {
     FRAME_t *frame;
+
     while(true) {
         if (_running) {
             frame = fifo_peek(); // Only peek the frame so the memory doesn't get overwritten
             if (frame != NULL) {
                 ws2811_setColors(frame->len, frame->data);
+                _ack_callback(frame->ackID);
+
                 fifo_read(); // Consume the frame
                 vTaskDelay(0 / portTICK_PERIOD_MS);
             }
