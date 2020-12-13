@@ -12,6 +12,7 @@
 
 static const char *TAG = "LEDRX";
 static const char *SOFTWARE = "ledrx";
+static const char *ACK_TOPIC = "home/xmastree/ack";
 static const char *ACK_MSG_JSON = "{\"type\":\"ack\",\"ackID\":%u}";
 
 // Embedded files
@@ -123,12 +124,12 @@ static void initialize_sntp(void)
 
 static void led_ack_callback(uint8_t ackID)
 {
-    char message[100];
+    char message[40];
 
     // Handle the ack identifier, if it's not zero and it's changed, send a confirmation
     if (ackID != _ackID && ackID != 0) {
         sprintf(message, ACK_MSG_JSON, ackID);
-        esp_mqtt_client_publish(_mqtt_ota_state->client, "home/xmastree/cal/client", message, 0, 0, 0);
+        esp_mqtt_client_publish(_mqtt_ota_state->client, ACK_TOPIC, message, 0, 0, 0);
     }
     _ackID = ackID;
 }
