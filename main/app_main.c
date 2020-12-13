@@ -13,6 +13,7 @@
 static const char *TAG = "LEDRX";
 static const char *SOFTWARE = "ledrx";
 static const char *ACK_TOPIC = "home/xmastree/ack";
+static const char *LOG_TOPIC = "home/xmastree/log";
 static const char *ACK_MSG_JSON = "{\"type\":\"ack\",\"ackID\":%u}";
 
 // Embedded files
@@ -134,6 +135,11 @@ static void led_ack_callback(uint8_t ackID)
     _ackID = ackID;
 }
 
+static void log_callback(char *message)
+{
+    esp_mqtt_client_publish(_mqtt_ota_state->client, LOG_TOPIC, message, 0, 0, 0);
+}
+
 void app_main()
 {
     esp_err_t err;
@@ -165,5 +171,5 @@ void app_main()
     int gpios[2];
     gpios[0] = CONFIG_LED_GPIO_A;
     gpios[1] = CONFIG_LED_GPIO_B;
-    led_initialise(led_ack_callback, gpios, sizeof(gpios) / sizeof(int));
+    led_initialise(log_callback, led_ack_callback, gpios, sizeof(gpios) / sizeof(int));
 }
