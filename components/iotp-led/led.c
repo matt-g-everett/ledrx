@@ -36,7 +36,7 @@ static FRAME_t * fifo_peek() {
             _seq++;
         }
 
-        ESP_LOGI(TAG, "fifo_peek failed (H: %d, T: %d, S:%d)", _head, _tail, _seq);
+        //ESP_LOGI(TAG, "fifo_peek failed (H: %d, T: %d, S:%d)", _head, _tail, _seq);
         return NULL;
     }
 
@@ -82,7 +82,7 @@ static uint8_t fifo_write(FRAME_t *frame) {
             _log_callback(msg);
             _seq++;
         }
-        ESP_LOGI(TAG, "************ DROPPED FRAME (%s, H:%d, T:%d) ************", _running ? "running" : "stopped", _head, _tail);
+        //ESP_LOGI(TAG, "************ DROPPED FRAME (%s, H:%d, T:%d) ************", _running ? "running" : "stopped", _head, _tail);
         _dropCount++;
         return false;
     }
