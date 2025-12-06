@@ -30,12 +30,6 @@ config MQTT_PASSWORD
     help
         MQTT password for the example to use.
 
-config OTA_TOPIC_ADVERTISE
-    string "MQTT OTA Advertise Topic"
-    default "home/ota/advertise"
-    help
-        MQTT topic on which OTA software versions will be advertised.
-
 config LED_GPIO_A
     int "LED channel A GPIO number"
 	range 0 39
