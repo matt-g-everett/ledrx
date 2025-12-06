@@ -4,23 +4,17 @@
 #include "nvs_flash.h"
 
 #include "mqtt_client.h"
-#include "iotp_ota.h"
 #include "iotp_wifi.h"
 #include "led.h"
 
 #define STACK_SIZE 4096
 
 static const char *TAG = "LEDRX";
-static const char *SOFTWARE = "ledrx";
 static const char *ACK_TOPIC = "home/xmastree/ack";
 static const char *LOG_TOPIC = "home/xmastree/log";
 static const char *ACK_MSG_JSON = "{\"type\":\"ack\",\"ackID\":%u}";
 
-// Embedded files
-extern const uint8_t version_start[] asm("_binary_version_txt_start");
-extern const uint8_t version_end[] asm("_binary_version_txt_end");
-
-static mqtt_ota_state_handle_t _mqtt_ota_state;
+static esp_mqtt_client_handle_t _mqtt_client;
 static uint8_t _tasks_started = false;
 static uint8_t _ackID = 0;
 
@@ -34,18 +28,13 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
     switch (event->event_id) {
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
-            ESP_LOGI(TAG, "***** ledrx started, version: %s *****", (const char *)version_start);
-
-            // Hook-up OTA
-            mqtt_ota_set_connected(_mqtt_ota_state, true);
-            mqtt_ota_subscribe(event->client, CONFIG_OTA_TOPIC_ADVERTISE);
+            ESP_LOGI(TAG, "***** ledrx started *****");
 
             // Hook-up LED stream
             subscribe_led_stream(event->client, CONFIG_LED_TOPIC_STREAM);
             break;
         case MQTT_EVENT_DISCONNECTED:
             ESP_LOGI(TAG, "MQTT_EVENT_DISCONNECTED");
-            mqtt_ota_set_connected(_mqtt_ota_state, false);
             break;
         case MQTT_EVENT_SUBSCRIBED:
             ESP_LOGI(TAG, "MQTT_EVENT_SUBSCRIBED, msg_id=%d", event->msg_id);
@@ -59,9 +48,6 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
         case MQTT_EVENT_DATA:
             if (event->topic_len > 0 && strncmp(event->topic, CONFIG_LED_TOPIC_STREAM, event->topic_len) == 0) {
                 led_push_stream(event->data);
-            }
-            else {
-                mqtt_ota_handle_data(_mqtt_ota_state, event, CONFIG_OTA_TOPIC_ADVERTISE);
             }
             break;
         case MQTT_EVENT_ERROR:
@@ -89,15 +75,8 @@ static esp_mqtt_client_handle_t mqtt_app_start(void)
     return client;
 }
 
-static void handle_ota_state_change(uint8_t started) {
-    led_set_running(!started);
-}
-
 void start_tasks(void) {
-    esp_mqtt_client_handle_t client = mqtt_app_start();
-    _mqtt_ota_state = mqtt_ota_init(client, SOFTWARE, (const char *)version_start, handle_ota_state_change);
-    xTaskCreate(mqtt_ota_task, "ota", STACK_SIZE, _mqtt_ota_state, 5, NULL);
-
+    _mqtt_client = mqtt_app_start();
     xTaskCreate(led_task, "led", STACK_SIZE, NULL, 5, NULL);
 }
 
@@ -130,14 +109,14 @@ static void led_ack_callback(uint8_t ackID)
     // Handle the ack identifier, if it's not zero and it's changed, send a confirmation
     if (ackID != _ackID && ackID != 0) {
         sprintf(message, ACK_MSG_JSON, ackID);
-        esp_mqtt_client_publish(_mqtt_ota_state->client, ACK_TOPIC, message, 0, 0, 0);
+        esp_mqtt_client_publish(_mqtt_client, ACK_TOPIC, message, 0, 0, 0);
     }
     _ackID = ackID;
 }
 
 static void log_callback(char *message)
 {
-    esp_mqtt_client_publish(_mqtt_ota_state->client, LOG_TOPIC, message, 0, 0, 0);
+    esp_mqtt_client_publish(_mqtt_client, LOG_TOPIC, message, 0, 0, 0);
 }
 
 void app_main()
