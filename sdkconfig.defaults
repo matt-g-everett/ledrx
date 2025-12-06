@@ -25,12 +25,22 @@ CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
 
 #
+# FreeRTOS - Dual-core configuration
+#
+CONFIG_FREERTOS_UNICORE=n
+
+#
 # Log output
 #
 CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 CONFIG_LOG_DEFAULT_LEVEL=3
 
 #
+# Wi-Fi - Pin WiFi task to Core 0
+#
+CONFIG_ESP_WIFI_TASK_PINNED_TO_CORE_0=y
+CONFIG_ESP_WIFI_TASK_CORE_ID=0
+
 # Wi-Fi - Credentials must be set in sdkconfig (not checked in)
 #
 # Note: Set CONFIG_WIFI_SSID and CONFIG_WIFI_PASSWORD in menuconfig

@@ -78,7 +78,11 @@ static esp_mqtt_client_handle_t mqtt_app_start(void)
 
 void start_tasks(void) {
     _mqtt_client = mqtt_app_start();
-    xTaskCreate(led_task, "led", STACK_SIZE, NULL, 5, NULL);
+
+    // Pin LED task to Core 1 for dedicated LED processing
+    // WiFi/MQTT tasks run on Core 0 by default
+    xTaskCreatePinnedToCore(led_task, "led", STACK_SIZE, NULL, 5, NULL, 1);
+    ESP_LOGI(TAG, "LED task pinned to Core 1");
 }
 
 void time_sync_notification_cb(struct timeval *tv)
