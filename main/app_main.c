@@ -4,7 +4,7 @@
 #include "nvs_flash.h"
 
 #include "mqtt_client.h"
-#include "iotp_wifi.h"
+#include "wifi.h"
 #include "led.h"
 
 #define STACK_SIZE 4096
