@@ -1,4 +1,4 @@
-set(COMPONENT_SRCS "app_main.c")
-set(COMPONENT_ADD_INCLUDEDIRS ".")
-
-register_component()
+idf_component_register(
+    SRCS "app_main.c"
+    INCLUDE_DIRS "."
+    REQUIRES esp_wifi mqtt nvs_flash esp_netif wifi led)

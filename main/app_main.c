@@ -23,8 +23,10 @@ static void subscribe_led_stream(esp_mqtt_client_handle_t client, const char *ad
     ESP_LOGI(TAG, "Sent subscribe to %s, msg_id=%d", advertise_topic, msg_id);
 }
 
-static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
+static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_t event_id, void *event_data)
 {
+    esp_mqtt_event_handle_t event = (esp_mqtt_event_handle_t)event_data;
+
     switch (event->event_id) {
         case MQTT_EVENT_CONNECTED:
             ESP_LOGI(TAG, "MQTT_EVENT_CONNECTED");
@@ -57,19 +59,18 @@ static esp_err_t mqtt_event_handler(esp_mqtt_event_handle_t event)
             ESP_LOGI(TAG, "Other event id:%d", event->event_id);
             break;
     }
-    return ESP_OK;
 }
 
 static esp_mqtt_client_handle_t mqtt_app_start(void)
 {
     esp_mqtt_client_config_t mqtt_cfg = {
-        .uri = CONFIG_BROKER_URL,
-        .event_handle = mqtt_event_handler,
-        .username = CONFIG_MQTT_USERNAME,
-        .password = CONFIG_MQTT_PASSWORD
+        .broker.address.uri = CONFIG_BROKER_URL,
+        .credentials.username = CONFIG_MQTT_USERNAME,
+        .credentials.authentication.password = CONFIG_MQTT_PASSWORD
     };
 
     esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
+    esp_mqtt_client_register_event(client, ESP_EVENT_ANY_ID, mqtt_event_handler, NULL);
     esp_mqtt_client_start(client);
 
     return client;
@@ -91,11 +92,11 @@ void time_sync_notification_cb(struct timeval *tv)
 static void initialize_sntp(void)
 {
     ESP_LOGI(TAG, "Initializing SNTP");
-    sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    sntp_setservername(0, "0.uk.pool.ntp.org");
-    sntp_setservername(1, "1.uk.pool.ntp.org");
-    sntp_set_time_sync_notification_cb(time_sync_notification_cb);
-    sntp_init();
+    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, "0.uk.pool.ntp.org");
+    esp_sntp_setservername(1, "1.uk.pool.ntp.org");
+    esp_sntp_set_time_sync_notification_cb(time_sync_notification_cb);
+    esp_sntp_init();
 
     // Set timezone to GMT
     setenv("TZ", "GMT0BST,M3.5.0/1,M10.5.0", 1);
