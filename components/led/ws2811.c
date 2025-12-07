@@ -46,6 +46,7 @@ typedef struct {
 
 static ws2811_channel_t *_channels = NULL;
 static uint8_t _channel_count = 0;
+static rmt_sync_manager_handle_t _sync_manager = NULL;
 
 // RMT TX encoder for WS2811
 typedef struct {
@@ -253,6 +254,33 @@ void ws2811_init(int *gpioNum, size_t count)
         }
 
         ESP_LOGI(TAG, "Initialized WS2811 channel %d on GPIO %d", i, gpioNum[i]);
+    }
+
+    // Create sync manager to synchronize all channels
+    if (count > 1) {
+        rmt_channel_handle_t *tx_channels = malloc(count * sizeof(rmt_channel_handle_t));
+        if (tx_channels == NULL) {
+            ESP_LOGE(TAG, "Failed to allocate sync channel array");
+            return;
+        }
+        for (int i = 0; i < count; i++) {
+            tx_channels[i] = _channels[i].tx_channel;
+        }
+
+        rmt_sync_manager_config_t sync_config = {
+            .tx_channel_array = tx_channels,
+            .array_size = count,
+        };
+        ret = rmt_new_sync_manager(&sync_config, &_sync_manager);
+        free(tx_channels);
+
+        if (ret != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to create sync manager: %s", esp_err_to_name(ret));
+            // Continue without sync manager - channels will still work, just not perfectly synchronized
+            _sync_manager = NULL;
+        } else {
+            ESP_LOGI(TAG, "Created sync manager for %d channels", count);
+        }
     }
 }
 
