@@ -36,10 +36,15 @@ CONFIG_LOG_DEFAULT_LEVEL_INFO=y
 CONFIG_LOG_DEFAULT_LEVEL=3
 
 #
+# Console output - use default UART
+# Note: USB-JTAG console doesn't work reliably on ESP32-S3-DevKitC-1
+#
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+
+#
 # Wi-Fi - Pin WiFi task to Core 0
 #
 CONFIG_ESP_WIFI_TASK_PINNED_TO_CORE_0=y
-CONFIG_ESP_WIFI_TASK_CORE_ID=0
 
 # Wi-Fi - Credentials must be set in sdkconfig (not checked in)
 #

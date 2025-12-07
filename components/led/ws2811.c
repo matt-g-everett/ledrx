@@ -2,17 +2,34 @@
 #include <freertos/semphr.h>
 #include <freertos/task.h>
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include <string.h>
 #include <stdlib.h>
 
 #include "driver/rmt_tx.h"
 #include "driver/rmt_encoder.h"
+#include "sdkconfig.h"
 
 #include "ws2811.h"
 
 const static char *TAG = "WS2811";
 
 #define WS2811_RESOLUTION_HZ 10000000  // 10MHz resolution, 1 tick = 0.1us
+
+// Target-specific RMT configuration
+#if CONFIG_IDF_TARGET_ESP32S3
+    // ESP32-S3: mem_block_symbols must match SOC_RMT_MEM_WORDS_PER_CHANNEL (48)
+    // DMA disabled for now due to channel allocation issues
+    #define RMT_MEM_BLOCK_SYMBOLS 48
+    #define RMT_USE_DMA false
+    #define WS2811_ALLOC(size) malloc(size)
+#elif CONFIG_IDF_TARGET_ESP32
+    #define RMT_MEM_BLOCK_SYMBOLS 64
+    #define RMT_USE_DMA false
+    #define WS2811_ALLOC(size) malloc(size)
+#else
+    #error "Unsupported target - requires ESP32 or ESP32-S3"
+#endif
 
 // WS2811 timing requirements (in 0.1us ticks at 10MHz)
 #define WS2811_T0H_TICKS    (uint32_t)(3.5)   // 0 bit: high for ~350ns
@@ -193,10 +210,10 @@ void ws2811_init(int *gpioNum, size_t count)
         rmt_tx_channel_config_t tx_chan_config = {
             .clk_src = RMT_CLK_SRC_DEFAULT,
             .gpio_num = gpioNum[i],
-            .mem_block_symbols = 64,
+            .mem_block_symbols = RMT_MEM_BLOCK_SYMBOLS,
             .resolution_hz = WS2811_RESOLUTION_HZ,
             .trans_queue_depth = 4,
-            .flags.with_dma = false,
+            .flags.with_dma = RMT_USE_DMA,
         };
         ret = rmt_new_tx_channel(&tx_chan_config, &_channels[i].tx_channel);
         if (ret != ESP_OK) {
@@ -257,7 +274,7 @@ void ws2811_setColors(unsigned int length, RGB_t *array)
     }
 
     for (int chan = 0; chan < _channel_count; chan++) {
-        channel_buffers[chan] = malloc(buffer_size);
+        channel_buffers[chan] = WS2811_ALLOC(buffer_size);
         if (channel_buffers[chan] == NULL) {
             ESP_LOGE(TAG, "Failed to allocate buffer for channel %d", chan);
             // Clean up already allocated buffers

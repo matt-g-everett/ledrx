@@ -110,7 +110,9 @@ void led_set_running(uint8_t running) {
 }
 
 uint8_t led_push_stream(char *data) {
-    return fifo_write((FRAME_t*)data);
+    FRAME_t *frame = (FRAME_t*)data;
+    ESP_LOGD(TAG, "led_push_stream: ackID=%d, len=%d", frame->ackID, frame->len);
+    return fifo_write(frame);
 }
 
 void led_task(void *pParam) {
@@ -140,10 +142,10 @@ void led_task(void *pParam) {
                 _ack_callback(frame->ackID);
 
                 fifo_read(); // Consume the frame
-                vTaskDelay(0 / portTICK_PERIOD_MS);
+                taskYIELD(); // Allow other tasks to run
             }
             else {
-                vTaskDelay(0 / portTICK_PERIOD_MS);
+                vTaskDelay(1); // Wait for frames, yield to IDLE task
             }
         }
         else {
