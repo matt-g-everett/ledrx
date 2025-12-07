@@ -1,5 +1,4 @@
 #include "esp_log.h"
-#include "esp_sntp.h"
 #include "freertos/FreeRTOS.h"
 #include "nvs_flash.h"
 #include <stdio.h>
@@ -16,7 +15,6 @@ static const char *LOG_TOPIC = "home/xmastree/log";
 static const char *ACK_MSG_JSON = "{\"type\":\"ack\",\"ackID\":%u}";
 
 static esp_mqtt_client_handle_t _mqtt_client;
-static uint8_t _tasks_started = false;
 static uint8_t _ackID = 0;
 
 static void subscribe_led_stream(esp_mqtt_client_handle_t client, const char *advertise_topic) {
@@ -89,28 +87,6 @@ void start_tasks(void) {
     ESP_LOGI(TAG, "LED task pinned to Core 1");
 }
 
-void time_sync_notification_cb(struct timeval *tv)
-{
-    ESP_LOGI(TAG, "NTP sync");
-    if (!_tasks_started) {
-        start_tasks();
-    }
-}
-
-static void initialize_sntp(void)
-{
-    ESP_LOGI(TAG, "Initializing SNTP");
-    esp_sntp_setoperatingmode(SNTP_OPMODE_POLL);
-    esp_sntp_setservername(0, "0.uk.pool.ntp.org");
-    esp_sntp_setservername(1, "1.uk.pool.ntp.org");
-    esp_sntp_set_time_sync_notification_cb(time_sync_notification_cb);
-    esp_sntp_init();
-
-    // Set timezone to GMT
-    setenv("TZ", "GMT0BST,M3.5.0/1,M10.5.0", 1);
-    tzset();
-}
-
 static void led_ack_callback(uint8_t ackID)
 {
     char message[40];
@@ -152,10 +128,11 @@ void app_main()
     ESP_ERROR_CHECK( err );
 
     wifi_init(CONFIG_WIFI_SSID, CONFIG_WIFI_PASSWORD);
-    initialize_sntp();
 
     int gpios[2];
     gpios[0] = CONFIG_LED_GPIO_A;
     gpios[1] = CONFIG_LED_GPIO_B;
     led_initialise(log_callback, led_ack_callback, gpios, sizeof(gpios) / sizeof(int));
+
+    start_tasks();
 }
