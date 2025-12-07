@@ -18,8 +18,8 @@ const static char *TAG = "WS2811";
 
 // Target-specific RMT configuration
 #if CONFIG_IDF_TARGET_ESP32S3
-    // ESP32-S3: mem_block_symbols must match SOC_RMT_MEM_WORDS_PER_CHANNEL (48)
-    // DMA disabled for now due to channel allocation issues
+    // ESP32-S3: DMA mode broken with multiple channels (ESP-IDF bug #14736)
+    // Using non-DMA mode with mem_block_symbols matching SOC_RMT_MEM_WORDS_PER_CHANNEL
     #define RMT_MEM_BLOCK_SYMBOLS 48
     #define RMT_USE_DMA false
     #define WS2811_ALLOC(size) malloc(size)
