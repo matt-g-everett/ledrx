@@ -32,11 +32,12 @@ const static char *TAG = "WS2811";
 #endif
 
 // WS2811 timing requirements (in 0.1us ticks at 10MHz)
-#define WS2811_T0H_TICKS    (uint32_t)(3.5)   // 0 bit: high for ~350ns
-#define WS2811_T0L_TICKS    (uint32_t)(8.5)   // 0 bit: low for ~850ns
-#define WS2811_T1H_TICKS    (uint32_t)(7.5)   // 1 bit: high for ~750ns
-#define WS2811_T1L_TICKS    (uint32_t)(4.5)   // 1 bit: low for ~450ns
-#define WS2811_RESET_TICKS  (uint32_t)(500)   // Reset: low for >50us
+// WS2811 uses 400kHz protocol with 2.5us bit period
+#define WS2811_T0H_TICKS    5    // 0 bit: high for 500ns
+#define WS2811_T0L_TICKS    20   // 0 bit: low for 2000ns
+#define WS2811_T1H_TICKS    12   // 1 bit: high for 1200ns
+#define WS2811_T1L_TICKS    13   // 1 bit: low for 1300ns
+#define WS2811_RESET_TICKS  500  // Reset: low for >50us
 
 typedef struct {
     rmt_channel_handle_t tx_channel;
@@ -56,6 +57,7 @@ typedef struct {
     rmt_symbol_word_t ws2811_bit0;
     rmt_symbol_word_t ws2811_bit1;
     rmt_symbol_word_t ws2811_reset;
+    int state;  // Encoder state: 0 = encoding bytes, 1 = encoding reset
 } rmt_ws2811_encoder_t;
 
 static size_t rmt_encode_ws2811(rmt_encoder_t *encoder, rmt_channel_handle_t channel,
@@ -63,43 +65,36 @@ static size_t rmt_encode_ws2811(rmt_encoder_t *encoder, rmt_channel_handle_t cha
                                 rmt_encode_state_t *ret_state)
 {
     rmt_ws2811_encoder_t *ws2811_encoder = __containerof(encoder, rmt_ws2811_encoder_t, base);
-    rmt_encode_state_t session_state = RMT_ENCODING_RESET;
     rmt_encode_state_t state = RMT_ENCODING_RESET;
     size_t encoded_symbols = 0;
     rmt_encoder_handle_t bytes_encoder = ws2811_encoder->bytes_encoder;
     rmt_encoder_handle_t copy_encoder = ws2811_encoder->copy_encoder;
 
-    switch (session_state) {
-    case RMT_ENCODING_RESET:
-        // Encode RGB data
+    switch (ws2811_encoder->state) {
+    case 0:  // Encoding RGB data
         encoded_symbols += bytes_encoder->encode(bytes_encoder, channel, primary_data, data_size, &state);
         if (state & RMT_ENCODING_COMPLETE) {
-            session_state = RMT_ENCODING_COMPLETE;
+            ws2811_encoder->state = 1;  // Move to reset code
         }
         if (state & RMT_ENCODING_MEM_FULL) {
-            state = (rmt_encode_state_t)(state | RMT_ENCODING_MEM_FULL);
-            goto out;
+            *ret_state = RMT_ENCODING_MEM_FULL;
+            return encoded_symbols;
         }
-        // fallthrough
-    case RMT_ENCODING_COMPLETE:
-        // Send reset code
+        // fall through to send reset code
+    case 1:  // Encoding reset code
         encoded_symbols += copy_encoder->encode(copy_encoder, channel, &ws2811_encoder->ws2811_reset,
                                                  sizeof(rmt_symbol_word_t), &state);
         if (state & RMT_ENCODING_COMPLETE) {
-            session_state = RMT_ENCODING_RESET;
-            state = (rmt_encode_state_t)(state | RMT_ENCODING_COMPLETE);
+            ws2811_encoder->state = 0;  // Reset for next transmission
+            *ret_state = RMT_ENCODING_COMPLETE;
+            return encoded_symbols;
         }
         if (state & RMT_ENCODING_MEM_FULL) {
-            state = (rmt_encode_state_t)(state | RMT_ENCODING_MEM_FULL);
-            goto out;
+            *ret_state = RMT_ENCODING_MEM_FULL;
+            return encoded_symbols;
         }
         break;
-    case RMT_ENCODING_MEM_FULL:
-    case RMT_ENCODING_WITH_EOF:
-        // These states are handled in the conditions above
-        break;
     }
-out:
     *ret_state = state;
     return encoded_symbols;
 }
@@ -118,6 +113,7 @@ static esp_err_t rmt_ws2811_encoder_reset(rmt_encoder_t *encoder)
     rmt_ws2811_encoder_t *ws2811_encoder = __containerof(encoder, rmt_ws2811_encoder_t, base);
     rmt_encoder_reset(ws2811_encoder->bytes_encoder);
     rmt_encoder_reset(ws2811_encoder->copy_encoder);
+    ws2811_encoder->state = 0;
     return ESP_OK;
 }
 
