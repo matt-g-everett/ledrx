@@ -1,5 +1,8 @@
+#include <string.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "freertos/queue.h"
 
 #include "esp_log.h"
 #include "esp_timer.h"
@@ -11,96 +14,42 @@
 
 const static char *TAG = "LED";
 
-FRAME_t _frame_buffer[CONFIG_LED_FRAME_BUFFER_SIZE];
+// Static frame buffer pool
+static FRAME_t _frame_buffer[CONFIG_LED_FRAME_BUFFER_SIZE];
 
-bool _log = false;
-bool _log_peek_empty = false;
-bool _force_log_drop = false;
-uint8_t _seq = 0;
-led_log _log_callback = NULL;
-led_ack _ack_callback = NULL;
-uint8_t _running = 0;
-uint8_t _head = 0;
-uint8_t _tail = 0;
+// Queue handles for buffer pool management
+static QueueHandle_t _free_slots = NULL;    // Available buffer slots
+static QueueHandle_t _ready_frames = NULL;  // Frames ready to display
 
-uint16_t _dropCount = 0;
-int64_t _sampling_start = 0;
+// Diagnostic logging (MQTT-based remote diagnostics)
+static bool _log = false;
+static bool _force_log_drop = false;
+static uint8_t _seq = 0;
+static led_log _log_callback = NULL;
 
-// reads a byte from the buffer and return ERROR_EMPTY if buffer empty
-static FRAME_t * fifo_peek() {
-    if (_head == _tail) {
-        if (_log && _log_peek_empty) {
-            char msg[60];
-            sprintf(msg, "BUF P EMPTY (H:%d, T:%d, S:%d)", _head, _tail, _seq);
-            _log_callback(msg);
-            _seq++;
-        }
+// Callbacks and state
+static led_ack _ack_callback = NULL;
+static uint8_t _running = 0;
 
-        //ESP_LOGI(TAG, "fifo_peek failed (H: %d, T: %d, S:%d)", _head, _tail, _seq);
-        return NULL;
-    }
-
-    uint8_t peek_index = (_tail + 1) % CONFIG_LED_FRAME_BUFFER_SIZE;
-    if (_log) {
-        char msg[60];
-        sprintf(msg, "BUF P %d (A:%d, H:%d, T:%d, S:%d)", peek_index, _frame_buffer[peek_index].ackID, _head, _tail, _seq);
-        _log_callback(msg);
-        _seq++;
-    }
-    return _frame_buffer + peek_index;
-}
-
-// reads a byte from the buffer and return 0 if buffer empty
-static FRAME_t * fifo_read() {
-    if (_head == _tail) {
-        if (_log) {
-            char msg[60];
-            sprintf(msg, "BUF R EMPTY (H:%d, T:%d, S:%d)", _head, _tail, _seq);
-            _log_callback(msg);
-            _seq++;
-        }
-        return NULL;
-    }
-
-    _tail = (_tail + 1) % CONFIG_LED_FRAME_BUFFER_SIZE;
-    if (_log) {
-        char msg[60];
-        sprintf(msg, "BUF R %d (A:%d, H:%d, T:%d, S:%d)", _tail, _frame_buffer[_tail].ackID, _head, _tail, _seq);
-        _log_callback(msg);
-        _seq++;
-    }
-    return _frame_buffer + _tail;
-}
-
-// writes a byte to the buffer if not ERROR_FULL
-static uint8_t fifo_write(FRAME_t *frame) {
-    uint8_t next_head = (_head + 1) % CONFIG_LED_FRAME_BUFFER_SIZE;
-    if (next_head == _tail) {
-        if (_force_log_drop || _log) {
-            char msg[60];
-            sprintf(msg, "BUF DROP (A:%d, H:%d, T:%d, S:%d)", frame->ackID, _head, _tail, _seq);
-            _log_callback(msg);
-            _seq++;
-        }
-        //ESP_LOGI(TAG, "************ DROPPED FRAME (%s, H:%d, T:%d) ************", _running ? "running" : "stopped", _head, _tail);
-        _dropCount++;
-        return false;
-    }
-    _frame_buffer[next_head] = *frame;
-    _head = next_head;
-    if (_log) {
-        char msg[60];
-        sprintf(msg, "BUF W %d (A:%d, H:%d, T:%d, S:%d)", _head, frame->ackID, _head, _tail, _seq);
-        _log_callback(msg);
-        _seq++;
-    }
-    return true;
-}
+// Drop statistics
+static uint16_t _dropCount = 0;
+static int64_t _sampling_start = 0;
 
 void led_initialise(led_log log_callback, led_ack ack_callback, int *gpios, size_t count) {
     _running = true;
     _log_callback = log_callback;
     _ack_callback = ack_callback;
+
+    // Create queues for buffer pool management
+    _free_slots = xQueueCreate(CONFIG_LED_FRAME_BUFFER_SIZE, sizeof(FRAME_t*));
+    _ready_frames = xQueueCreate(CONFIG_LED_FRAME_BUFFER_SIZE, sizeof(FRAME_t*));
+
+    // Pre-populate free slots queue with pointers to buffer pool entries
+    for (int i = 0; i < CONFIG_LED_FRAME_BUFFER_SIZE; i++) {
+        FRAME_t *slot = &_frame_buffer[i];
+        xQueueSend(_free_slots, &slot, 0);
+    }
+
     ws2811_init(gpios, count);
 }
 
@@ -110,9 +59,37 @@ void led_set_running(uint8_t running) {
 }
 
 uint8_t led_push_stream(char *data) {
-    FRAME_t *frame = (FRAME_t*)data;
-    ESP_LOGD(TAG, "led_push_stream: ackID=%d, len=%d", frame->ackID, frame->len);
-    return fifo_write(frame);
+    FRAME_t *incoming = (FRAME_t*)data;
+    FRAME_t *slot;
+
+    ESP_LOGD(TAG, "led_push_stream: ackID=%d, len=%d", incoming->ackID, incoming->len);
+
+    // Non-blocking acquire of a free slot
+    if (xQueueReceive(_free_slots, &slot, 0) == pdTRUE) {
+        // Copy frame data into the buffer pool slot
+        memcpy(slot, incoming, sizeof(FRAME_t));
+
+        // Enqueue for consumption by led_task
+        xQueueSend(_ready_frames, &slot, 0);
+
+        if (_log) {
+            char msg[60];
+            sprintf(msg, "BUF W (A:%d, S:%d)", incoming->ackID, _seq);
+            _log_callback(msg);
+            _seq++;
+        }
+        return true;
+    }
+
+    // Buffer full - drop frame
+    if (_force_log_drop || _log) {
+        char msg[60];
+        sprintf(msg, "BUF DROP (A:%d, S:%d)", incoming->ackID, _seq);
+        _log_callback(msg);
+        _seq++;
+    }
+    _dropCount++;
+    return false;
 }
 
 void led_task(void *pParam) {
@@ -139,17 +116,24 @@ void led_task(void *pParam) {
         }
 
         if (_running) {
-            frame = fifo_peek(); // Only peek the frame so the memory doesn't get overwritten
-            if (frame != NULL) {
+            // Block up to 10ms waiting for frames - eliminates busy-wait
+            if (xQueueReceive(_ready_frames, &frame, pdMS_TO_TICKS(10)) == pdTRUE) {
+                if (_log) {
+                    char msg[60];
+                    sprintf(msg, "BUF R (A:%d, S:%d)", frame->ackID, _seq);
+                    _log_callback(msg);
+                    _seq++;
+                }
+
                 ws2811_setColors(frame->len, frame->data);
                 _ack_callback(frame->ackID);
 
-                fifo_read(); // Consume the frame
+                // Return slot to the free pool
+                xQueueSend(_free_slots, &frame, 0);
+
                 vTaskDelay(1); // Brief delay between frames for system stability
             }
-            else {
-                vTaskDelay(1); // Wait for frames, yield to IDLE task
-            }
+            // No frame available within timeout - loop continues
         }
         else {
             vTaskDelay(1000 / portTICK_PERIOD_MS);
