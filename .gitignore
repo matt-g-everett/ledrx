@@ -1,5 +1,7 @@
-.vscode
-build
+.vscode/
+.claude/
+build/
+plan/
 sdkconfig
 sdkconfig.old
 
