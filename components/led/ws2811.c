@@ -19,7 +19,8 @@ const static char *TAG = "WS2811";
 // Target-specific RMT configuration
 #if CONFIG_IDF_TARGET_ESP32S3
     // ESP32-S3: DMA mode broken with multiple channels (ESP-IDF bug #14736)
-    // Using non-DMA mode with mem_block_symbols matching SOC_RMT_MEM_WORDS_PER_CHANNEL
+    // Using non-DMA mode. ESP32-S3 has 48 symbols per channel (SOC_RMT_MEM_WORDS_PER_CHANNEL)
+    // Using 96 would overlap into the next channel's memory!
     #define RMT_MEM_BLOCK_SYMBOLS 48
     #define RMT_USE_DMA false
     #define WS2811_ALLOC(size) malloc(size)
@@ -65,36 +66,36 @@ static size_t rmt_encode_ws2811(rmt_encoder_t *encoder, rmt_channel_handle_t cha
                                 rmt_encode_state_t *ret_state)
 {
     rmt_ws2811_encoder_t *ws2811_encoder = __containerof(encoder, rmt_ws2811_encoder_t, base);
-    rmt_encode_state_t state = RMT_ENCODING_RESET;
-    size_t encoded_symbols = 0;
     rmt_encoder_handle_t bytes_encoder = ws2811_encoder->bytes_encoder;
     rmt_encoder_handle_t copy_encoder = ws2811_encoder->copy_encoder;
+    rmt_encode_state_t session_state = RMT_ENCODING_RESET;
+    rmt_encode_state_t state = RMT_ENCODING_RESET;
+    size_t encoded_symbols = 0;
 
     switch (ws2811_encoder->state) {
     case 0:  // Encoding RGB data
-        encoded_symbols += bytes_encoder->encode(bytes_encoder, channel, primary_data, data_size, &state);
-        if (state & RMT_ENCODING_COMPLETE) {
+        encoded_symbols += bytes_encoder->encode(bytes_encoder, channel, primary_data, data_size, &session_state);
+        if (session_state & RMT_ENCODING_COMPLETE) {
             ws2811_encoder->state = 1;  // Move to reset code
         }
-        if (state & RMT_ENCODING_MEM_FULL) {
-            *ret_state = RMT_ENCODING_MEM_FULL;
-            return encoded_symbols;
+        if (session_state & RMT_ENCODING_MEM_FULL) {
+            state |= RMT_ENCODING_MEM_FULL;
+            goto out;
         }
         // fall through to send reset code
     case 1:  // Encoding reset code
         encoded_symbols += copy_encoder->encode(copy_encoder, channel, &ws2811_encoder->ws2811_reset,
-                                                 sizeof(rmt_symbol_word_t), &state);
-        if (state & RMT_ENCODING_COMPLETE) {
-            ws2811_encoder->state = 0;  // Reset for next transmission
-            *ret_state = RMT_ENCODING_COMPLETE;
-            return encoded_symbols;
+                                                 sizeof(ws2811_encoder->ws2811_reset), &session_state);
+        if (session_state & RMT_ENCODING_COMPLETE) {
+            ws2811_encoder->state = RMT_ENCODING_RESET;  // Reset for next transmission
+            state |= RMT_ENCODING_COMPLETE;
         }
-        if (state & RMT_ENCODING_MEM_FULL) {
-            *ret_state = RMT_ENCODING_MEM_FULL;
-            return encoded_symbols;
+        if (session_state & RMT_ENCODING_MEM_FULL) {
+            state |= RMT_ENCODING_MEM_FULL;
+            goto out;
         }
-        break;
     }
+out:
     *ret_state = state;
     return encoded_symbols;
 }
@@ -113,7 +114,7 @@ static esp_err_t rmt_ws2811_encoder_reset(rmt_encoder_t *encoder)
     rmt_ws2811_encoder_t *ws2811_encoder = __containerof(encoder, rmt_ws2811_encoder_t, base);
     rmt_encoder_reset(ws2811_encoder->bytes_encoder);
     rmt_encoder_reset(ws2811_encoder->copy_encoder);
-    ws2811_encoder->state = 0;
+    ws2811_encoder->state = RMT_ENCODING_RESET;
     return ESP_OK;
 }
 
@@ -340,7 +341,9 @@ void ws2811_setColors(unsigned int length, RGB_t *array)
 
     // Wait for all channels to complete transmission (ensures synchronization)
     for (int chan = 0; chan < _channel_count; chan++) {
-        xSemaphoreTake(_channels[chan].done_sem, portMAX_DELAY);
+        if (xSemaphoreTake(_channels[chan].done_sem, pdMS_TO_TICKS(1000)) != pdTRUE) {
+            ESP_LOGE(TAG, "Timeout waiting for channel %d transmission", chan);
+        }
     }
 
     // Clean up buffers

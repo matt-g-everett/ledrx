@@ -47,10 +47,11 @@ static void mqtt_event_handler(void *handler_args, esp_event_base_t base, int32_
             ESP_LOGI(TAG, "MQTT_EVENT_PUBLISHED, msg_id=%d", event->msg_id);
             break;
         case MQTT_EVENT_DATA:
-            ESP_LOGD(TAG, "MQTT_EVENT_DATA: topic=%.*s, data_len=%d",
-                     event->topic_len, event->topic, event->data_len);
             if (event->topic_len > 0 && strncmp(event->topic, CONFIG_LED_TOPIC_STREAM, event->topic_len) == 0) {
-                ESP_LOGD(TAG, "LED stream data received: %d bytes", event->data_len);
+                if (event->data_len != event->total_data_len) {
+                    ESP_LOGW(TAG, "Fragmented MQTT message! Got %d of %d bytes (need buffer.size >= %d)",
+                             event->data_len, event->total_data_len, event->total_data_len);
+                }
                 led_push_stream(event->data);
             }
             break;
@@ -68,7 +69,8 @@ static esp_mqtt_client_handle_t mqtt_app_start(void)
     esp_mqtt_client_config_t mqtt_cfg = {
         .broker.address.uri = CONFIG_BROKER_URL,
         .credentials.username = CONFIG_MQTT_USERNAME,
-        .credentials.authentication.password = CONFIG_MQTT_PASSWORD
+        .credentials.authentication.password = CONFIG_MQTT_PASSWORD,
+        .buffer.size = 2048,  // Default is 1024, need 1803 for LED frames
     };
 
     esp_mqtt_client_handle_t client = esp_mqtt_client_init(&mqtt_cfg);
@@ -113,11 +115,6 @@ void app_main()
     ESP_LOGI(TAG, "[APP] IDF version: %s", esp_get_idf_version());
 
     esp_log_level_set("*", ESP_LOG_INFO);
-    esp_log_level_set("MQTT_CLIENT", ESP_LOG_VERBOSE);
-    esp_log_level_set("TRANSPORT_TCP", ESP_LOG_VERBOSE);
-    esp_log_level_set("TRANSPORT_SSL", ESP_LOG_VERBOSE);
-    esp_log_level_set("TRANSPORT", ESP_LOG_VERBOSE);
-    esp_log_level_set("OUTBOX", ESP_LOG_VERBOSE);
 
     err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -129,10 +126,8 @@ void app_main()
 
     wifi_init(CONFIG_WIFI_SSID, CONFIG_WIFI_PASSWORD);
 
-    int gpios[2];
-    gpios[0] = CONFIG_LED_GPIO_A;
-    gpios[1] = CONFIG_LED_GPIO_B;
-    led_initialise(log_callback, led_ack_callback, gpios, sizeof(gpios) / sizeof(int));
+    int gpios[] = { CONFIG_LED_GPIO_A, CONFIG_LED_GPIO_B };
+    led_initialise(log_callback, led_ack_callback, gpios, sizeof(gpios) / sizeof(gpios[0]));
 
     start_tasks();
 }
