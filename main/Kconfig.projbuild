@@ -30,30 +30,28 @@ config MQTT_PASSWORD
     help
         MQTT password for the example to use.
 
-config OTA_TOPIC_ADVERTISE
-    string "MQTT OTA Advertise Topic"
-    default "home/ota/advertise"
-    help
-        MQTT topic on which OTA software versions will be advertised.
-
 config LED_GPIO_A
     int "LED channel A GPIO number"
-	range 0 39
-	default 26
-	help
-		GPIO number (IOxx) attached to the first LED control wire.
+    range 0 48 if IDF_TARGET_ESP32S3
+    range 0 39 if IDF_TARGET_ESP32
+    default 38 if IDF_TARGET_ESP32S3
+    default 26 if IDF_TARGET_ESP32
+    help
+        GPIO number (IOxx) attached to the first LED control wire.
 
 config LED_GPIO_B
     int "LED channel B GPIO number"
-	range 0 39
-	default 27
-	help
-		GPIO number (IOxx) attached to the second LED control wire.
+    range 0 48 if IDF_TARGET_ESP32S3
+    range 0 39 if IDF_TARGET_ESP32
+    default 39 if IDF_TARGET_ESP32S3
+    default 27 if IDF_TARGET_ESP32
+    help
+        GPIO number (IOxx) attached to the second LED control wire.
 
 config LED_NUM_PIXELS
     int "Number of pixels"
 	range 0 655365
-	default 50
+	default 100
 	help
 		Number of RGB LED pixels.
 
@@ -66,7 +64,7 @@ config LED_FRAME_BUFFER_SIZE
 
 config LED_TOPIC_STREAM
     string "MQTT LED data topic"
-    default "home/ledrx/stream"
+    default "home/xmastree/stream"
     help
         MQTT topic on which streaming LED data is sent.
 

@@ -1,0 +1,58 @@
+# ESP-IDF Configuration Defaults for LEDRX
+# This file contains safe defaults that can be checked into version control.
+# Local overrides (credentials, etc.) go in sdkconfig which is gitignored.
+
+#
+# Serial flasher config
+#
+CONFIG_ESPTOOLPY_FLASHMODE_DIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_40M=y
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
+CONFIG_ESPTOOLPY_BEFORE_RESET=y
+CONFIG_ESPTOOLPY_AFTER_RESET=y
+CONFIG_ESPTOOLPY_MONITOR_BAUD=115200
+
+#
+# Compiler options
+#
+CONFIG_COMPILER_OPTIMIZATION_DEBUG=y
+CONFIG_COMPILER_OPTIMIZATION_ASSERTIONS_ENABLE=y
+
+#
+# ESP System Settings
+#
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ=240
+
+#
+# FreeRTOS - Dual-core configuration
+#
+CONFIG_FREERTOS_UNICORE=n
+
+#
+# Log output
+#
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_DEFAULT_LEVEL=3
+
+#
+# Console output - use default UART
+# Note: USB-JTAG console doesn't work reliably on ESP32-S3-DevKitC-1
+#
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+
+#
+# Wi-Fi - Pin WiFi task to Core 0
+#
+CONFIG_ESP_WIFI_TASK_PINNED_TO_CORE_0=y
+
+# Wi-Fi - Credentials must be set in sdkconfig (not checked in)
+#
+# Note: Set CONFIG_WIFI_SSID and CONFIG_WIFI_PASSWORD in menuconfig
+# These will be stored in sdkconfig which is gitignored
+
+#
+# MQTT - Credentials must be set in sdkconfig (not checked in)
+#
+# Note: Set CONFIG_MQTT_BROKER_URI, CONFIG_MQTT_USERNAME, CONFIG_MQTT_PASSWORD
+# in menuconfig. These will be stored in sdkconfig which is gitignored

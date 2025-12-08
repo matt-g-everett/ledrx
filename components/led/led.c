@@ -110,7 +110,9 @@ void led_set_running(uint8_t running) {
 }
 
 uint8_t led_push_stream(char *data) {
-    return fifo_write((FRAME_t*)data);
+    FRAME_t *frame = (FRAME_t*)data;
+    ESP_LOGD(TAG, "led_push_stream: ackID=%d, len=%d", frame->ackID, frame->len);
+    return fifo_write(frame);
 }
 
 void led_task(void *pParam) {
@@ -120,13 +122,16 @@ void led_task(void *pParam) {
     _sampling_start = esp_timer_get_time();
 
     while(true) {
+        // Only log drop stats if there were actual drops
         delta = esp_timer_get_time() - _sampling_start;
         if (delta > 1000000) {
-            float fps = (float)_dropCount / ((float)delta / 1000000.0f);
-            char msg[60];
-            sprintf(msg, "BUF DROP FPS %.1f (S:%d)", fps, _seq);
-            _log_callback(msg);
-            _seq++;
+            if (_dropCount > 0) {
+                float fps = (float)_dropCount / ((float)delta / 1000000.0f);
+                char msg[60];
+                sprintf(msg, "BUF DROP FPS %.1f (S:%d)", fps, _seq);
+                _log_callback(msg);
+                _seq++;
+            }
 
             // Reset sampling period
             _dropCount = 0;
@@ -140,10 +145,10 @@ void led_task(void *pParam) {
                 _ack_callback(frame->ackID);
 
                 fifo_read(); // Consume the frame
-                vTaskDelay(0 / portTICK_PERIOD_MS);
+                vTaskDelay(1); // Brief delay between frames for system stability
             }
             else {
-                vTaskDelay(0 / portTICK_PERIOD_MS);
+                vTaskDelay(1); // Wait for frames, yield to IDLE task
             }
         }
         else {

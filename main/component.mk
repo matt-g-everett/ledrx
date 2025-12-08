@@ -1,1 +1,1 @@
-COMPONENT_EMBED_TXTFILES += ${PROJECT_PATH}/version.txt
+# Component makefile
