@@ -323,6 +323,11 @@ void ws2811_setColors(unsigned int length, RGB_t *array)
         }
     }
 
+    // Reset sync manager before transmission to re-arm synchronization
+    if (_sync_manager != NULL) {
+        rmt_sync_reset(_sync_manager);
+    }
+
     // Transmit on all channels simultaneously for synchronization
     rmt_transmit_config_t tx_config = {
         .loop_count = 0,
