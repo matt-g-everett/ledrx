@@ -30,6 +30,7 @@ static led_log _log_callback = NULL;
 // Callbacks and state
 static led_ack _ack_callback = NULL;
 static uint8_t _running = 0;
+static TaskHandle_t _task_handle = NULL;
 
 // Drop statistics
 static uint16_t _dropCount = 0;
@@ -56,6 +57,11 @@ void led_initialise(led_log log_callback, led_ack ack_callback, int *gpios, size
 void led_set_running(uint8_t running) {
     ESP_LOGI(TAG, "Setting LED state to %s.", running ? "running" : "stopped");
     _running = running;
+
+    // Wake the task immediately if starting
+    if (running && _task_handle != NULL) {
+        xTaskNotifyGive(_task_handle);
+    }
 }
 
 uint8_t led_push_stream(char *data) {
@@ -96,6 +102,9 @@ void led_task(void *pParam) {
     FRAME_t *frame;
     int64_t delta;
 
+    // Store task handle for notifications from led_set_running
+    _task_handle = xTaskGetCurrentTaskHandle();
+
     _sampling_start = esp_timer_get_time();
 
     while(true) {
@@ -130,13 +139,12 @@ void led_task(void *pParam) {
 
                 // Return slot to the free pool
                 xQueueSend(_free_slots, &frame, 0);
-
-                vTaskDelay(1); // Brief delay between frames for system stability
             }
             // No frame available within timeout - loop continues
         }
         else {
-            vTaskDelay(1000 / portTICK_PERIOD_MS);
+            // Sleep until notified by led_set_running
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
         }
     }
 }
